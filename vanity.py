@@ -18,6 +18,7 @@ qualunque wallet). Ogni risultato della GPU viene ricalcolato sulla CPU e con
 bip_utils (implementazione indipendente) prima di essere salvato in found.txt.
 """
 import argparse
+import faulthandler
 import hashlib
 import hmac
 import json
@@ -35,7 +36,8 @@ import numpy as np
 from coincurve import PublicKey
 from Crypto.Hash import keccak
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+faulthandler.enable()  # in caso di crash nativo (driver/NVRTC) stampa dove
 HERE = Path(__file__).resolve().parent
 WORDLIST_SHA256 = "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
 _raw = (HERE / "english.txt").read_bytes()
@@ -230,6 +232,8 @@ def _preload_nvidia_libs():
 
 def gpu_search(args, prefix, suffix, expected, results: Results, status: Path):
     _preload_nvidia_libs()
+    import warnings
+    warnings.filterwarnings("ignore", message="CUDA path could not be detected")
     import cupy as cp
 
     props = cp.cuda.runtime.getDeviceProperties(args.device)
@@ -237,9 +241,13 @@ def gpu_search(args, prefix, suffix, expected, results: Results, status: Path):
     name = props["name"].decode() if isinstance(props["name"], bytes) else props["name"]
     print(f"GPU: {name}  (compute {props['major']}.{props['minor']}, {props['multiProcessorCount']} SM)")
 
-    print("Compilo il kernel CUDA (NVRTC)...", end=" ", flush=True)
     t = time.time()
-    mod = cp.RawModule(code=(HERE / "kernel.cu").read_text(), options=("-std=c++14",))
+    if args.nvrtc:
+        print("Compilo il kernel CUDA con NVRTC...", end=" ", flush=True)
+        mod = cp.RawModule(code=(HERE / "kernel.cu").read_text(), options=("-std=c++14",))
+    else:
+        print("Carico il kernel PTX precompilato (JIT del driver)...", end=" ", flush=True)
+        mod = cp.RawModule(path=str(HERE / "kernel.ptx"))
     k_derive = mod.get_function("derive")
     k_search = mod.get_function("search")
     print(f"OK ({time.time() - t:.1f}s)")
@@ -350,6 +358,7 @@ def main():
     ap.add_argument("--case", action="store_true", help="rispetta maiuscole EIP-55 (molto più lento)")
     ap.add_argument("--count", type=int, default=1, help="quanti risultati trovare (default 1)")
     ap.add_argument("--cpu", action="store_true", help="forza la ricerca su CPU")
+    ap.add_argument("--nvrtc", action="store_true", help="compila kernel.cu con NVRTC invece del PTX")
     ap.add_argument("--workers", type=int, default=os.cpu_count(), help="processi CPU")
     ap.add_argument("--device", type=int, default=0, help="indice GPU")
     ap.add_argument("--threads", type=int, default=128, help="thread per blocco CUDA")
@@ -387,8 +396,13 @@ def main():
         else:
             try:
                 gpu_search(args, prefix, suffix, expected, results, status)
-            except ImportError as e:
-                print(f"\n!! CUDA non disponibile ({e}). Passo alla CPU.")
+            except KeyboardInterrupt:
+                raise
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                print(f"\n!! GPU non utilizzabile ({type(e).__name__}: {e}).\n"
+                      f"   Mandami l'errore qui sopra. Intanto passo alla CPU.\n")
                 cpu_search(args, prefix, suffix, expected, results, status)
     except KeyboardInterrupt:
         print("\nInterrotto.")

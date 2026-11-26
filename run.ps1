@@ -34,3 +34,6 @@ try {
 
 Set-Location $Dir
 uv run --script app\vanity.py @args
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ("`n!! Il programma è uscito con codice {0} (0x{0:X8}). Manda questo output per il debug." -f $LASTEXITCODE)
+}
