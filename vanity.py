@@ -5,6 +5,7 @@
 #   "pycryptodome>=3.20",
 #   "bip_utils>=2.9",
 #   "numpy>=1.26",
+#   "pyzipper>=0.3.6",
 #   "cupy-cuda12x>=13; sys_platform != 'darwin'",
 #   "nvidia-cuda-nvrtc-cu12; sys_platform != 'darwin'",
 #   "nvidia-cuda-runtime-cu12; sys_platform != 'darwin'",
@@ -36,7 +37,7 @@ import numpy as np
 from coincurve import PublicKey
 from Crypto.Hash import keccak
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 faulthandler.enable()  # in caso di crash nativo (driver/NVRTC) stampa dove
 HERE = Path(__file__).resolve().parent
 WORDLIST_SHA256 = "2f5eed53a4727b4bf8880d8f3f199efc90e58503646d9ff8eff3a2ed3b24dbda"
@@ -135,10 +136,51 @@ def build_words():
 
 
 # ================================================================ risultati
+HEXCH = "0123456789abcdefABCDEF"
+
+
+def seg_ok(seg: str, pat: str, case: bool) -> bool:
+    """seg: pezzo di indirizzo (minuscolo o EIP-55). pat: hex esatto o '#' = cifra 0-9."""
+    for ac, p in zip(seg, pat):
+        a = ac.lower()
+        if p == "#":
+            if a not in "0123456789":
+                return False
+        elif a != p.lower():
+            return False
+        elif case and p.isalpha() and ac != p:
+            return False
+    return True
+
+
+def addr_matches(addr: str, prefix: str, suffix: str, case: bool = False) -> bool:
+    return seg_ok(addr[:len(prefix)], prefix, case) and (
+        not suffix or seg_ok(addr[-len(suffix):], suffix, case))
+
+
+def write_encrypted_zip(path: Path, inner_name: str, content: str, password: str):
+    import pyzipper
+    with pyzipper.AESZipFile(path, "w", compression=pyzipper.ZIP_DEFLATED,
+                             encryption=pyzipper.WZ_AES) as z:
+        z.setpassword(password.encode())
+        z.setencryption(pyzipper.WZ_AES, nbits=256)
+        z.writestr(inner_name, content)
+    with pyzipper.AESZipFile(path) as z:  # rilettura di controllo
+        z.setpassword(password.encode())
+        if z.read(inner_name).decode() != content:
+            raise RuntimeError(f"verifica di {path} fallita")
+
+
 class Results:
-    def __init__(self, out: Path, prefix: str, suffix: str, case: bool):
-        self.out, self.prefix, self.suffix, self.case = out, prefix, suffix, case
+    def __init__(self, outdir: Path, prefix, suffix, case, count, names=None, password=None):
+        self.outdir, self.prefix, self.suffix, self.case = outdir, prefix, suffix, case
+        self.pending = list(names) if names else None
+        self.password = password
+        self.target = len(self.pending) if names else count
         self.found = 0
+
+    def done(self):
+        return self.found >= self.target
 
     def check_and_save(self, mnemonic: str) -> bool:
         """Ricontrolla un candidato con CPU + bip_utils; se valido lo salva."""
@@ -147,23 +189,29 @@ class Results:
         if "0x" + mine != ref:
             print(f"\n!! Candidato scartato: CPU {mine} ≠ bip_utils {ref}")
             return False
-        low = mine.lower()
-        if not (low.startswith(self.prefix.lower()) and low.endswith(self.suffix.lower())):
+        if not addr_matches(mine, self.prefix, self.suffix):
             print(f"\n!! Candidato GPU non corrisponde al pattern ({ref}): bug del kernel?")
             return False
-        if self.case and not (mine.startswith(self.prefix) and mine.endswith(self.suffix)):
+        if not addr_matches(mine, self.prefix, self.suffix, self.case):
             return False  # pattern giusto ma maiuscole EIP-55 diverse
+        content = (f"address:  {ref}\npath:     {PATH}\nmnemonic: {mnemonic}\n"
+                   f"created:  {datetime.now().isoformat(timespec='seconds')}\n")
+        if self.pending is not None:
+            name = self.pending.pop(0)
+            dest = self.outdir / f"{name}.zip"
+            write_encrypted_zip(dest, f"{name}.txt", content, self.password)
+        else:
+            dest = self.outdir / "found.txt"
+            new = not dest.exists()
+            with open(dest, "a", encoding="utf-8") as f:
+                f.write(content + "\n")
+            if new:
+                try:
+                    os.chmod(dest, 0o600)
+                except OSError:
+                    pass
         self.found += 1
-        new = not self.out.exists()
-        with open(self.out, "a", encoding="utf-8") as f:
-            f.write(f"# {datetime.now().isoformat(timespec='seconds')}\n"
-                    f"address:  {ref}\npath:     {PATH}\nmnemonic: {mnemonic}\n\n")
-        if new:
-            try:
-                os.chmod(self.out, 0o600)
-            except OSError:
-                pass
-        print(f"\n\n*** TROVATO #{self.found}: {ref}\n    salvato in {self.out}\n")
+        print(f"\n\n*** TROVATO {self.found}/{self.target}: {ref}\n    salvato in {dest}\n")
         return True
 
 
@@ -273,7 +321,7 @@ def gpu_search(args, prefix, suffix, expected, results: Results, status: Path):
                      "Riprova più tardi: il repository verrà corretto e il bootstrap scarica l'ultima versione.")
     print("OK")
 
-    pat = np.array([int(ch, 16) for ch in (prefix + suffix).lower()] or [0], dtype=np.uint8)
+    pat = np.array([16 if ch == "#" else int(ch, 16) for ch in prefix + suffix] or [0], dtype=np.uint8)
     d_pat = cp.asarray(pat)
     MAXH = 64
     d_count = cp.zeros(1, dtype=cp.uint32)
@@ -283,8 +331,8 @@ def gpu_search(args, prefix, suffix, expected, results: Results, status: Path):
     target = args.kernel_ms / 1000
     prog = Progress(expected, status, "GPU")
     tried = 0
-    print(f"Ricerca avviata. Risultati → {results.out}\nCtrl+C per fermare.\n")
-    while results.found < args.count:
+    print(f"Ricerca avviata. Risultati → {results.outdir}\nCtrl+C per fermare.\n")
+    while not results.done():
         base = secrets.randbits(128)
         d_count.fill(0)
         t = time.time()
@@ -301,7 +349,7 @@ def gpu_search(args, prefix, suffix, expected, results: Results, status: Path):
             for i in range(min(cnt, MAXH)):
                 ent = int(hits[2 * i]).to_bytes(8, "big") + int(hits[2 * i + 1]).to_bytes(8, "big")
                 results.check_and_save(mnemonic_from_entropy(ent))
-                if results.found >= args.count:
+                if results.done():
                     break
         prog.show(tried, results.found)
         # adatta la dimensione del batch per stare intorno a kernel_ms per lancio
@@ -312,7 +360,6 @@ def gpu_search(args, prefix, suffix, expected, results: Results, status: Path):
 
 # ================================================================ CPU (fallback)
 def cpu_worker(prefix, suffix, counter, found_q, stop):
-    p, s = prefix.lower(), suffix.lower()
     local = 0
     while not stop.is_set():
         m = mnemonic_from_entropy(secrets.token_bytes(16))
@@ -321,7 +368,7 @@ def cpu_worker(prefix, suffix, counter, found_q, stop):
         except ValueError:
             continue
         local += 1
-        if a.startswith(p) and a.endswith(s):
+        if addr_matches(a, prefix, suffix):
             found_q.put(m)
         if local >= 64:
             with counter.get_lock():
@@ -335,10 +382,10 @@ def cpu_search(args, prefix, suffix, expected, results: Results, status: Path):
              for _ in range(args.workers)]
     for pr in procs:
         pr.start()
-    print(f"Avviati {args.workers} processi CPU. Risultati → {results.out}\nCtrl+C per fermare.\n")
+    print(f"Avviati {args.workers} processi CPU. Risultati → {results.outdir}\nCtrl+C per fermare.\n")
     prog = Progress(expected, status, "CPU")
     try:
-        while results.found < args.count:
+        while not results.done():
             try:
                 results.check_and_save(found_q.get(timeout=1))
             except queue.Empty:
@@ -351,51 +398,113 @@ def cpu_search(args, prefix, suffix, expected, results: Results, status: Path):
 
 
 # ================================================================ main
+def desktop_dir() -> Path:
+    if os.name == "nt":
+        try:
+            import ctypes
+            buf = ctypes.create_unicode_buffer(260)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 0x10, None, 0, buf) == 0:  # CSIDL_DESKTOPDIRECTORY
+                return Path(buf.value)
+        except Exception:
+            pass
+    return Path.home() / "Desktop"
+
+
+def ask_password() -> str:
+    pw = os.environ.get("VANITY_PASSWORD")
+    if pw:
+        print("Password presa da VANITY_PASSWORD.")
+        return pw
+    import getpass
+    while True:
+        a = getpass.getpass("Password per cifrare i file: ")
+        if not a:
+            print("La password non può essere vuota.")
+            continue
+        if getpass.getpass("Ripeti la password: ") == a:
+            return a
+        print("Le password non coincidono, riprova.")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Vanity address ETH con seed BIP39 (GPU CUDA)")
-    ap.add_argument("--prefix", default="C0DEAD")
-    ap.add_argument("--suffix", default="")
-    ap.add_argument("--case", action="store_true", help="rispetta maiuscole EIP-55 (molto più lento)")
-    ap.add_argument("--count", type=int, default=1, help="quanti risultati trovare (default 1)")
+    ap.add_argument("--prefix", default="C0DEAD", help="hex; '#' = una cifra 0-9 (es. C0DEAD#)")
+    ap.add_argument("--suffix", default="", help="hex; '#' = una cifra 0-9")
+    ap.add_argument("--case", action="store_true", help="rispetta maiuscole EIP-55 (x2 per lettera)")
+    ap.add_argument("--count", type=int, default=1, help="quanti risultati trovare (senza --names)")
+    ap.add_argument("--names", default="",
+                    help="nomi separati da virgola: un seed per nome, ognuno in <nome>.zip cifrato AES-256")
+    ap.add_argument("--outdir", default="",
+                    help="cartella di output (default: Desktop/vanity-seeds con --names, altrimenti corrente)")
     ap.add_argument("--cpu", action="store_true", help="forza la ricerca su CPU")
     ap.add_argument("--nvrtc", action="store_true", help="compila kernel.cu con NVRTC invece del PTX")
     ap.add_argument("--workers", type=int, default=os.cpu_count(), help="processi CPU")
     ap.add_argument("--device", type=int, default=0, help="indice GPU")
     ap.add_argument("--threads", type=int, default=128, help="thread per blocco CUDA")
     ap.add_argument("--kernel-ms", type=int, default=200, help="durata obiettivo di ogni lancio")
-    ap.add_argument("--out", default="found.txt")
     args = ap.parse_args()
 
     prefix = args.prefix.removeprefix("0x").removeprefix("0X")
     suffix = args.suffix
     pattern = prefix + suffix
-    bad = sorted({ch for ch in pattern if ch not in "0123456789abcdefABCDEF"})
+    bad = sorted({ch for ch in pattern if ch not in HEXCH + "#"})
     if bad:
-        sys.exit(f"Pattern non valido: {bad} non sono esadecimali (0-9, a-f). 'O' lettera ≠ '0' zero.")
+        sys.exit(f"Pattern non valido: {bad}. Ammessi 0-9, a-f e '#' (= cifra). 'O' lettera ≠ '0' zero.")
     if len(pattern) > 40:
         sys.exit("Pattern troppo lungo")
-    letters = sum(ch.isalpha() for ch in pattern)
-    expected = 16 ** len(pattern) * (2 ** letters if args.case else 1)
+    expected = 1.0
+    for ch in pattern:
+        expected *= 1.6 if ch == "#" else (32 if (args.case and ch.isalpha()) else 16)
+    expected = int(expected)
+
+    names = [n.strip() for n in args.names.split(",") if n.strip()]
+    bad_names = [n for n in names if not all(c.isalnum() or c in "-_" for c in n)]
+    if bad_names:
+        sys.exit(f"Nomi non validi: {bad_names} (solo lettere, numeri, - e _)")
+    if args.outdir:
+        outdir = Path(args.outdir).expanduser().resolve()
+    elif names:
+        outdir = desktop_dir() / "vanity-seeds"
+    else:
+        outdir = Path.cwd()
+    outdir.mkdir(parents=True, exist_ok=True)
 
     print(f"vanity-seed {VERSION}")
-    print(f"Pattern: 0x{prefix}…{suffix}   (maiuscole {'esatte' if args.case else 'ignorate'})")
-    print(f"Tentativi attesi in media: {expected:,}".replace(",", "."))
+    print(f"Pattern: 0x{prefix}…{suffix}   (maiuscole {'esatte' if args.case else 'ignorate'}; # = cifra)")
+    print(f"Tentativi attesi per ogni risultato: {expected:,}".replace(",", "."))
+
+    password = None
+    if names:
+        done = [n for n in names if (outdir / f"{n}.zip").exists()]
+        names = [n for n in names if n not in done]
+        if done:
+            print(f"Già presenti in {outdir} (salto): {', '.join(done)}")
+        if not names:
+            print("Tutti i file esistono già. Niente da fare.")
+            return
+        print(f"Da trovare: {', '.join(names)}  →  {outdir}")
+        password = ask_password()
+
     print("Self-test CPU (vettore noto + bip_utils)...", end=" ", flush=True)
     try:
         cpu_self_test()
+        if names:
+            import tempfile
+            with tempfile.TemporaryDirectory() as td:
+                write_encrypted_zip(Path(td) / "t.zip", "t.txt", "test", password)
     except Exception as e:
         sys.exit(f"FALLITO: {e}")
     print("OK")
 
-    out = Path(args.out).resolve()
-    results = Results(out, prefix, suffix, args.case)
-    status = out.with_name("status.json")
+    results = Results(outdir, prefix, suffix, args.case, args.count, names or None, password)
+    status = Path.cwd() / "status.json"
+    total = expected * results.target
     try:
         if args.cpu:
-            cpu_search(args, prefix, suffix, expected, results, status)
+            cpu_search(args, prefix, suffix, total, results, status)
         else:
             try:
-                gpu_search(args, prefix, suffix, expected, results, status)
+                gpu_search(args, prefix, suffix, total, results, status)
             except KeyboardInterrupt:
                 raise
             except Exception as e:
@@ -403,10 +512,10 @@ def main():
                 traceback.print_exc()
                 print(f"\n!! GPU non utilizzabile ({type(e).__name__}: {e}).\n"
                       f"   Mandami l'errore qui sopra. Intanto passo alla CPU.\n")
-                cpu_search(args, prefix, suffix, expected, results, status)
+                cpu_search(args, prefix, suffix, total, results, status)
     except KeyboardInterrupt:
-        print("\nInterrotto.")
-    print(f"\nFine. Trovati {results.found}. File: {out}")
+        print("\nInterrotto. Rilanciando, i nomi già salvati vengono saltati.")
+    print(f"\nFine. Trovati {results.found}/{results.target}. Cartella: {outdir}")
 
 
 if __name__ == "__main__":

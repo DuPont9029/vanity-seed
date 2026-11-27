@@ -521,14 +521,17 @@ extern "C" __global__ void search(const u8* words, const u8* wlen, const u32* ta
   u64 hi = base_hi + (lo < base_lo ? 1 : 0);
   u8 addr[20];
   ent_to_address(hi, lo, words, wlen, table, addr);
+  // pat[i] = 0..15 nibble esatto, 16 = qualsiasi cifra decimale (0-9)
   for (u32 i = 0; i < plen; i++) {
     u32 nib = (addr[i >> 1] >> ((i & 1) ? 0 : 4)) & 15u;
-    if (nib != pat[i]) return;
+    u32 p = pat[i];
+    if (p == 16 ? nib > 9 : nib != p) return;
   }
   for (u32 s = 0; s < slen; s++) {
     u32 i = 40 - slen + s;
     u32 nib = (addr[i >> 1] >> ((i & 1) ? 0 : 4)) & 15u;
-    if (nib != pat[plen + s]) return;
+    u32 p = pat[plen + s];
+    if (p == 16 ? nib > 9 : nib != p) return;
   }
   u32 slot = atomicAdd(hit_count, 1u);
   if (slot < max_hits) { hits[2 * slot] = hi; hits[2 * slot + 1] = lo; }

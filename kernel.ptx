@@ -18078,7 +18078,7 @@ $L__BB23_2:
 	.local .align 1 .b8 	__local_depot24[20];
 	.reg .b64 	%SP;
 	.reg .b64 	%SPL;
-	.reg .pred 	%p<10>;
+	.reg .pred 	%p<14>;
 	.reg .b32 	%r<43>;
 	.reg .b64 	%rd<32>;
 
@@ -18093,13 +18093,13 @@ $L__BB23_2:
 	cvta.to.global.u64 	%rd3, %rd17;
 	add.u64 	%rd18, %SP, 0;
 	add.u64 	%rd4, %SPL, 0;
-	ld.param.b32 	%r15, [search_param_5];
-	mov.u32 	%r16, %ctaid.x;
-	mov.u32 	%r17, %ntid.x;
-	mov.u32 	%r18, %tid.x;
-	mad.lo.s32 	%r1, %r16, %r17, %r18;
-	setp.ge.u32 	%p1, %r1, %r15;
-	@%p1 bra 	$L__BB24_11;
+	ld.param.b32 	%r19, [search_param_5];
+	mov.u32 	%r20, %ctaid.x;
+	mov.u32 	%r21, %ntid.x;
+	mov.u32 	%r22, %tid.x;
+	mad.lo.s32 	%r1, %r20, %r21, %r22;
+	setp.ge.u32 	%p1, %r1, %r19;
+	@%p1 bra 	$L__BB24_15;
 // %bb.1:
 	ld.param.b32 	%r41, [search_param_7];
 	ld.param.b64 	%rd14, [search_param_4];
@@ -18132,69 +18132,83 @@ $L__BB23_2:
 // %bb.2:
 	mov.b64 	%rd31, 0;
 	mov.b32 	%r39, 0;
-$L__BB24_3:                             // =>This Inner Loop Header: Depth=1
-	cvt.u32.u64 	%r20, %rd31;
-	shr.u32 	%r21, %r20, 1;
-	cvt.u64.u32 	%rd23, %r21;
-	add.s64 	%rd24, %rd4, %rd23;
-	ld.local.b8 	%r22, [%rd24];
-	not.b32 	%r23, %r39;
-	and.b32 	%r24, %r23, 4;
-	shr.u32 	%r25, %r22, %r24;
-	and.b32 	%r26, %r25, 15;
-	add.s64 	%rd25, %rd1, %rd31;
-	ld.global.b8 	%r27, [%rd25];
-	setp.eq.b32 	%p4, %r26, %r27;
-	@%p4 bra 	$L__BB24_4;
-	bra.uni 	$L__BB24_11;
-$L__BB24_4:                             //   in Loop: Header=BB24_3 Depth=1
+	bra.uni 	$L__BB24_3;
+$L__BB24_9:                             //   in Loop: Header=BB24_3 Depth=1
+	setp.ne.b32 	%p5, %r5, %r6;
+	@%p5 bra 	$L__BB24_15;
+$L__BB24_10:                            //   in Loop: Header=BB24_3 Depth=1
 	add.s64 	%rd31, %rd31, 1;
-	cvt.u32.u64 	%r28, %rd31;
+	cvt.u32.u64 	%r30, %rd31;
 	add.s32 	%r39, %r39, 4;
-	setp.ne.b32 	%p5, %r41, %r28;
-	@%p5 bra 	$L__BB24_3;
+	setp.eq.b32 	%p7, %r41, %r30;
+	@%p7 bra 	$L__BB24_5;
+$L__BB24_3:                             // =>This Inner Loop Header: Depth=1
+	cvt.u32.u64 	%r24, %rd31;
+	shr.u32 	%r25, %r24, 1;
+	cvt.u64.u32 	%rd23, %r25;
+	add.s64 	%rd24, %rd4, %rd23;
+	ld.local.b8 	%r26, [%rd24];
+	not.b32 	%r27, %r39;
+	and.b32 	%r28, %r27, 4;
+	shr.u32 	%r29, %r26, %r28;
+	and.b32 	%r5, %r29, 15;
+	add.s64 	%rd25, %rd1, %rd31;
+	ld.global.b8 	%r6, [%rd25];
+	setp.ne.b32 	%p4, %r6, 16;
+	@%p4 bra 	$L__BB24_9;
+// %bb.4:                               //   in Loop: Header=BB24_3 Depth=1
+	setp.gt.u32 	%p6, %r5, 9;
+	@%p6 bra 	$L__BB24_15;
+	bra.uni 	$L__BB24_10;
 $L__BB24_5:
-	ld.param.b32 	%r13, [search_param_8];
-	setp.eq.b32 	%p6, %r13, 0;
-	@%p6 bra 	$L__BB24_9;
+	ld.param.b32 	%r17, [search_param_8];
+	setp.eq.b32 	%p8, %r17, 0;
+	@%p8 bra 	$L__BB24_13;
 // %bb.6:
-	sub.s32 	%r42, 40, %r13;
-	shl.b32 	%r29, %r13, 2;
-	neg.s32 	%r40, %r29;
-$L__BB24_8:                             // =>This Inner Loop Header: Depth=1
-	shr.u32 	%r30, %r42, 1;
-	cvt.u64.u32 	%rd26, %r30;
-	add.s64 	%rd27, %rd4, %rd26;
-	ld.local.b8 	%r31, [%rd27];
-	not.b32 	%r32, %r40;
-	and.b32 	%r33, %r32, 4;
-	shr.u32 	%r34, %r31, %r33;
-	and.b32 	%r35, %r34, 15;
-	cvt.u64.u32 	%rd28, %r41;
-	add.s64 	%rd29, %rd1, %rd28;
-	ld.global.b8 	%r36, [%rd29];
-	setp.eq.b32 	%p7, %r35, %r36;
-	@%p7 bra 	$L__BB24_7;
-	bra.uni 	$L__BB24_11;
-$L__BB24_7:                             //   in Loop: Header=BB24_8 Depth=1
+	sub.s32 	%r42, 40, %r17;
+	shl.b32 	%r31, %r17, 2;
+	neg.s32 	%r40, %r31;
+	bra.uni 	$L__BB24_7;
+$L__BB24_11:                            //   in Loop: Header=BB24_7 Depth=1
+	setp.ne.b32 	%p10, %r11, %r12;
+	@%p10 bra 	$L__BB24_15;
+$L__BB24_12:                            //   in Loop: Header=BB24_7 Depth=1
 	add.s32 	%r42, %r42, 1;
 	add.s32 	%r41, %r41, 1;
 	add.s32 	%r40, %r40, 4;
-	setp.eq.b32 	%p8, %r42, 40;
-	@%p8 bra 	$L__BB24_9;
-	bra.uni 	$L__BB24_8;
-$L__BB24_9:
-	ld.param.b32 	%r14, [search_param_11];
-	atom.global.add.u32 	%r37, [%rd2], 1;
-	setp.ge.u32 	%p9, %r37, %r14;
+	setp.ne.b32 	%p12, %r42, 40;
+	@%p12 bra 	$L__BB24_7;
+	bra.uni 	$L__BB24_13;
+$L__BB24_7:                             // =>This Inner Loop Header: Depth=1
+	shr.u32 	%r32, %r42, 1;
+	cvt.u64.u32 	%rd26, %r32;
+	add.s64 	%rd27, %rd4, %rd26;
+	ld.local.b8 	%r33, [%rd27];
+	not.b32 	%r34, %r40;
+	and.b32 	%r35, %r34, 4;
+	shr.u32 	%r36, %r33, %r35;
+	and.b32 	%r11, %r36, 15;
+	cvt.u64.u32 	%rd28, %r41;
+	add.s64 	%rd29, %rd1, %rd28;
+	ld.global.b8 	%r12, [%rd29];
+	setp.ne.b32 	%p9, %r12, 16;
 	@%p9 bra 	$L__BB24_11;
-// %bb.10:
+// %bb.8:                               //   in Loop: Header=BB24_7 Depth=1
+	setp.gt.u32 	%p11, %r11, 9;
+	@%p11 bra 	$L__BB24_15;
+	bra.uni 	$L__BB24_12;
+$L__BB24_13:
+	ld.param.b32 	%r18, [search_param_11];
+	atom.global.add.u32 	%r37, [%rd2], 1;
+	setp.ge.u32 	%p13, %r37, %r18;
+	@%p13 bra 	$L__BB24_15;
+// %bb.14:
 	shl.b32 	%r38, %r37, 1;
 	mul.wide.u32 	%rd30, %r38, 8;
 	add.s64 	%rd9, %rd3, %rd30;
 	st.global.b64 	[%rd9], %rd6;
 	st.global.b64 	[%rd9+8], %rd5;
-$L__BB24_11:
+$L__BB24_15:
 	ret;
                                         // -- End function
 }

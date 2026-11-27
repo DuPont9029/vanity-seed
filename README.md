@@ -36,9 +36,11 @@ Opzioni:
 
 | opzione | |
 |---|---|
-| `--prefix` / `--suffix` | pattern esadecimale |
+| `--prefix` / `--suffix` | pattern esadecimale; `#` = una cifra 0-9 (es. `C0DEAD#`) |
 | `--case` | rispetta le maiuscole EIP-55 (×2 per ogni lettera) |
-| `--count N` | quanti risultati trovare |
+| `--count N` | quanti risultati trovare (in `found.txt`) |
+| `--names a,b,c` | un seed per nome, ognuno in `<nome>.zip` cifrato AES-256 (password chiesta all'avvio o da `VANITY_PASSWORD`), in `Desktop/vanity-seeds`. Rilanciando, i nomi già salvati vengono saltati |
+| `--outdir` | cartella di output |
 | `--cpu` | forza la CPU |
 | `--kernel-ms` | durata di ogni lancio GPU (default 200, sotto il watchdog di Windows) |
 
