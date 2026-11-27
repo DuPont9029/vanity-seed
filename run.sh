@@ -31,4 +31,6 @@ else
 fi
 
 cd "$DIR"
-exec uv run --script app/vanity.py "$@"
+# argomenti extra anche via variabile: VANITY_ARGS="--suffix C0DE"
+# shellcheck disable=SC2086
+exec uv run --script app/vanity.py "$@" ${VANITY_ARGS:-}

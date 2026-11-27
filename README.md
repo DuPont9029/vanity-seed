@@ -22,7 +22,17 @@ irm https://raw.githubusercontent.com/DuPont9029/vanity-seed/main/run.ps1 | iex
 curl -fsSL https://raw.githubusercontent.com/DuPont9029/vanity-seed/main/run.sh | bash
 ```
 
-Default: prefisso `C0DEAD`, si ferma al primo risultato. Opzioni (es. `bash -s -- --prefix C0DE --count 3`):
+Default: prefisso `C0DEAD`, si ferma al primo risultato. Le opzioni si passano con la
+variabile `VANITY_ARGS` (funziona anche con `irm | iex`):
+
+```powershell
+$env:VANITY_ARGS = "--prefix C0DEAD --suffix C0DE"; irm https://raw.githubusercontent.com/DuPont9029/vanity-seed/main/run.ps1 | iex
+```
+```bash
+curl -fsSL https://raw.githubusercontent.com/DuPont9029/vanity-seed/main/run.sh | VANITY_ARGS="--prefix C0DEAD --suffix C0DE" bash
+```
+
+Opzioni:
 
 | opzione | |
 |---|---|

@@ -33,7 +33,9 @@ try {
 }
 
 Set-Location $Dir
-uv run --script app\vanity.py @args
+$argv = @($args)
+if ($env:VANITY_ARGS) { $argv += ($env:VANITY_ARGS -split '\s+' | Where-Object { $_ }) }
+uv run --script app\vanity.py @argv
 if ($LASTEXITCODE -ne 0) {
     Write-Host ("`n!! Il programma è uscito con codice {0} (0x{0:X8}). Manda questo output per il debug." -f $LASTEXITCODE)
 }
